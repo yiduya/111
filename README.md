@@ -2,6 +2,12 @@
 
 A calm, touch-friendly study companion for the supplied **Language Transfer — Introduction to French** transcript. It covers **40 tracks, 157 PDF pages, 2,856 dialogue turns and 1,535 learning steps**, in the original English and French.
 
+## Open the hosted website
+
+After GitHub Pages finishes deployment, open **https://yiduya.github.io/111/**.
+
+Publish from `main` → `/ (root)` in Settings → Pages. The repository includes the complete `assets/` directory; keep it alongside `index.html`. Check the repository's Actions tab for a successful **pages build and deployment** run before using the URL. Saving the Pages source alone does not confirm a completed deployment.
+
 ## Use it on iPad
 
 1. Host the contents of `dist/petit-a-petit-website.zip` on an HTTPS static website. Upload the **extracted contents**, with `index.html` at the website root. No build command, server backend, API key, login or paid AI service is needed.
