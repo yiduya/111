@@ -101,7 +101,9 @@ function begin(id=state.cursor,review=false,reset=true){
  openStep(id);
 }
 function openStep(id){
- readingCleanup?.();readingCleanup=null;stopSpeech();current=byId.get(id);revealed=false;hidden=false;route='lesson';
+ readingCleanup?.();readingCleanup=null;stopSpeech();current=byId.get(id);
+ if(!reviewing&&state.settings.mode==='read'&&!readingBlocks(current).length&&!neededResponses(current).length){const t=trackFor(id);current=t.steps.slice(current.index+1).find(s=>readingBlocks(s).length||neededResponses(s).length)||t.steps.slice(0,current.index).reverse().find(s=>readingBlocks(s).length||neededResponses(s).length)||current;id=current.id;}
+ revealed=false;hidden=false;route='lesson';
  if(!reviewing){state.cursor=id;save();}
  document.querySelectorAll('[data-route]').forEach(b=>b.classList.toggle('active',b.dataset.route===(reviewing?'review':'home')));
  $('#breadcrumb').textContent=`${reviewing?'PRACTICE':'YOUR CONVERSATION'} / TRACK ${trackFor(id).id}`;
@@ -143,6 +145,8 @@ function neededResponses(step){
  const french=normalizedReading((step.audio||[]).filter(r=>r.lang==='fr').map(r=>r.text).join(' '));
  return step.responses.filter(response=>{
   const text=normalizedReading(response.text);
+  const previous=track.steps[step.index-1];
+  if(!readingBlocks(step).length&&previous?.responses.some(r=>normalizedReading(r.text)===text))return false;
   if(!text||/^(?:uh huh|mm hmm|ah|oh)$/.test(text))return false;
   // A teacher restatement supplies the answer; repeating it adds no information.
   if(nextText===text||nextText.startsWith(text+' '))return false;
@@ -152,7 +156,7 @@ function neededResponses(step){
  });
 }
 function inlineResponses(step){
- return neededResponses(step).map((response,index)=>`<div class="inline-response"><small>Student response · may include mistakes</small><div class="reading-line"><p>${languageText(response.audio,response.text)}</p><button class="line-listen" data-read-response="${step.id}" data-response-index="${index}">▷ Listen</button></div></div>`).join('');
+ return neededResponses(step).map((response,index)=>`<div class="inline-response"><small>Student</small><div class="reading-line"><p>${languageText(response.audio,response.text)}</p><button class="line-listen" data-read-response="${step.id}" data-response-index="${index}">▷ Listen</button></div></div>`).join('');
 }
 function readingParagraphs(step){
  return readingBlocks(step).map((block,index)=>`<div class="reading-line ${block.kind}"><p>${languageText(block.audio,block.text)}</p><button class="line-listen" data-read-audio="${step.id}" data-read-block="${index}" aria-label="Listen to paragraph ${index+1} of step ${step.index+1}">▷ Listen</button></div>`).join('');
@@ -182,8 +186,8 @@ function readerTitle(group,index){
 }
 function renderReader(){
  const track=trackFor(current.id),groups=readingGroups(track);
- $('#main').innerHTML=`<section class="lesson-heading"><div class="row"><p class="eyebrow">READ AT YOUR OWN PACE</p><button class="plain" data-route="home">Save & leave ↗</button></div><h1>Track ${String(track.id).padStart(2,'0')} <span class="subtle">/ Reading</span></h1><p class="intro">Follow the ideas. Keep scrolling when you’re ready.</p><div class="reader-toolbar"><button class="secondary" data-action="practice-mode">Switch to speaking practice</button><button class="secondary" data-action="track-notes">Lesson notes</button><button class="plain" data-action="transcript">Original transcript ↗</button></div><p class="reader-help">Read in order: prompts, responses and explanations. Repeated answers and brief praise are omitted. Progress and your exact reading place save as you scroll; reaching the end marks the track read.</p><div class="reading-legend"><span class="teacher-key">Teacher · explanations & examples</span><span class="student-key">Student · responses in context</span></div><p id="reader-progress" role="status">${progress(track)} / ${track.steps.length} steps explored</p></section>
- <div class="reading-layout"><nav class="reading-outline" aria-label="Reading sections"><p class="eyebrow">IN THIS TRACK</p>${groups.map((g,i)=>`<a href="#reading-${g[0].id}">${String(i+1).padStart(2,'0')} · ${esc(readerTitle(g,i))}</a>`).join('')}</nav><div class="reading-stream">${groups.map((group,i)=>`<section class="reading-section" aria-labelledby="section-${i}"><header><p class="eyebrow">${String(i+1).padStart(2,'0')} / ${String(groups.length).padStart(2,'0')} · STEPS ${group[0].index+1}–${group.at(-1).index+1}</p><h2 id="section-${i}">${esc(readerTitle(group,i))}</h2></header>${group.map(step=>`<article class="reading-passage" id="reading-${step.id}" data-reading-id="${step.id}"><div class="reading-copy">${readingParagraphs(step)}</div>${inlineResponses(step)}<button class="passage-save plain" data-read-bookmark="${step.id}" aria-label="${state.bookmarks.includes(step.id)?'Remove step from practice':'Save step for practice'}" aria-pressed="${state.bookmarks.includes(step.id)}">${state.bookmarks.includes(step.id)?'✓ Saved':'+ Practice'}</button></article>`).join('')}
+ $('#main').innerHTML=`<section class="lesson-heading"><div class="row"><p class="eyebrow">READ AT YOUR OWN PACE</p><button class="plain" data-route="home">Save & leave ↗</button></div><h1>Track ${String(track.id).padStart(2,'0')} <span class="subtle">/ Reading</span></h1><p class="intro">Follow the ideas. Keep scrolling when you’re ready.</p><div class="reader-toolbar"><button class="secondary" data-action="practice-mode">Switch to speaking practice</button><button class="secondary" data-action="track-notes">Lesson notes</button><button class="plain" data-action="transcript">Original transcript ↗</button></div><p class="reader-help">Read in order: prompts, responses and explanations. Repeated answers and brief praise are omitted. Progress and your exact reading place save as you scroll; reaching the end marks the track read.</p><div class="reading-legend"><span class="teacher-key">Teacher · explanations & examples</span><span class="student-key">Student · original attempts, may include mistakes</span></div><p id="reader-progress" role="status">${progress(track)} / ${track.steps.length} steps explored</p></section>
+ <div class="reading-layout"><nav class="reading-outline" aria-label="Reading sections"><p class="eyebrow">IN THIS TRACK</p>${groups.map((g,i)=>`<a href="#reading-${g[0].id}">${String(i+1).padStart(2,'0')} · ${esc(readerTitle(g,i))}</a>`).join('')}</nav><div class="reading-stream">${groups.map((group,i)=>`<section class="reading-section" aria-labelledby="section-${i}"><header><p class="eyebrow">${String(i+1).padStart(2,'0')} / ${String(groups.length).padStart(2,'0')} · STEPS ${group[0].index+1}–${group.at(-1).index+1}</p><h2 id="section-${i}">${esc(readerTitle(group,i))}</h2></header>${group.map(step=>`<article class="reading-passage" ${!readingBlocks(step).length&&!neededResponses(step).length?'hidden':''} id="reading-${step.id}" data-reading-id="${step.id}"><div class="reading-copy">${readingParagraphs(step)}</div>${inlineResponses(step)}<button class="passage-save plain" data-read-bookmark="${step.id}" aria-label="${state.bookmarks.includes(step.id)?'Remove step from practice':'Save step for practice'}" aria-pressed="${state.bookmarks.includes(step.id)}">${state.bookmarks.includes(step.id)?'✓ Saved':'+ Practice'}</button></article>`).join('')}
 
  <button class="secondary section-complete" data-read-complete="${i}" aria-pressed="${group.every(s=>state.completed.includes(s.id))}">${group.every(s=>state.completed.includes(s.id))?'✓ Section explored':'Mark this section explored'}</button></section>`).join('')}
  <footer class="reading-end"><button class="secondary" data-action="complete-track">Mark entire track read</button><h2>A good place to pause.</h2><p>Your reading place is saved. Continue whenever you feel ready.</p>${course.tracks[track.id]?`<button class="primary" data-track="${track.id+1}">Next track →</button>`:''}<button class="secondary" data-route="home">Save & leave</button></footer></div></div>
@@ -193,11 +197,14 @@ function renderReader(){
 function updateReadingProgress(){
  if(route!=='lesson'||reviewing||state.settings.mode!=='read')return;
  const track=trackFor(current.id),count=progress(track);
- const label=`Track ${track.id} · ${count} / ${track.steps.length} read · ${Math.round(count/track.steps.length*100)}%`;
+ const label=`Track ${track.id} · Reading ${current.index+1} / ${track.steps.length} · ${Math.round(count/track.steps.length*100)}% read`;
  const status=$('#reader-progress');if(status)status.textContent=label;
  const live=$('#reading-live-progress');if(live)live.textContent=label;
+ if(status?.dataset.count===String(count))return;
+ if(status)status.dataset.count=String(count);
+ const groups=readingGroups(track);
  document.querySelectorAll('[data-read-complete]').forEach(button=>{
-  const complete=readingGroups(track)[Number(button.dataset.readComplete)].every(s=>state.completed.includes(s.id));
+  const complete=groups[Number(button.dataset.readComplete)].every(s=>state.completed.includes(s.id));
   button.textContent=complete?'✓ Section read':'Mark this section read';button.setAttribute('aria-pressed',complete);
  });
  const finish=$('[data-action="complete-track"]');if(finish)finish.textContent=count===track.steps.length?'✓ Track read':'Mark entire track read';
@@ -208,10 +215,10 @@ function markTrackRead(){
  save();updateReadingProgress();
 }
 function startReadingProgress(){
- const passages=[...document.querySelectorAll('[data-reading-id]')];
+ const passages=[...document.querySelectorAll('[data-reading-id]')].filter(el=>!el.hidden);
  const seen=new Set(),track=trackFor(current.id);let frame=0,timer=0,lastY=scrollY;
- const sync=(mark=false)=>{
-  if(route!=='lesson'||reviewing||state.settings.mode!=='read'||$('#modal').open||document.hidden)return;
+ const sync=(mark=false,leaving=false)=>{
+  if(route!=='lesson'||reviewing||state.settings.mode!=='read'||$('#modal').open||(!leaving&&document.hidden))return;
   const line=innerHeight*.22;
   const rects=passages.map(el=>({el,rect:el.getBoundingClientRect()}));
   let target=rects.find(({rect})=>rect.top<=line&&rect.bottom>line)||rects.find(({rect})=>rect.top>line);
@@ -230,12 +237,13 @@ function startReadingProgress(){
   save();updateReadingProgress();
  };
  const onScroll=()=>{if(scrollY===lastY)return;lastY=scrollY;if(!frame)frame=requestAnimationFrame(()=>{frame=0;sync();});clearTimeout(timer);timer=setTimeout(()=>sync(true),350);};
- const onLeave=()=>sync(true);
- window.addEventListener('scroll',onScroll,{passive:true});window.addEventListener('pagehide',onLeave);
- const onVisibility=()=>{if(document.hidden){save();}else sync();};document.addEventListener('visibilitychange',onVisibility);
+ const onLeave=()=>sync(true,true);
+ const onResize=()=>sync();
+ window.addEventListener('scroll',onScroll,{passive:true});window.addEventListener('pagehide',onLeave);window.addEventListener('resize',onResize);
+ const onVisibility=()=>sync(document.hidden,document.hidden);document.addEventListener('visibilitychange',onVisibility);
  // Initial render/resume records visibility but does not complete skipped passages.
  sync();
- readingCleanup=()=>{sync(true);cancelAnimationFrame(frame);clearTimeout(timer);window.removeEventListener('scroll',onScroll);window.removeEventListener('pagehide',onLeave);document.removeEventListener('visibilitychange',onVisibility);};
+ readingCleanup=(flush=true)=>{if(flush)sync(true,true);cancelAnimationFrame(frame);clearTimeout(timer);window.removeEventListener('scroll',onScroll);window.removeEventListener('pagehide',onLeave);window.removeEventListener('resize',onResize);document.removeEventListener('visibilitychange',onVisibility);};
 }
 function completeReadingSection(button){
  const track=trackFor(current.id),group=readingGroups(track)[Number(button.dataset.readComplete)];
@@ -285,7 +293,7 @@ function showTranscript(){
  const t=trackFor(current.id);
  modal(`<p class="eyebrow">ORIGINAL COURSE · REFERENCE VIEW</p><h2 id="modal-title">Track ${t.id} transcript</h2><p>Includes the original student’s attempts, mistakes, and teacher corrections. Use this for reference after thinking through your own response.</p><p><a href="${encodeURI(course.source)}#page=${current.page}" target="_blank" rel="noopener">Open original PDF at page ${current.page} ↗</a></p>${t.turns.map(turn=>`<div class="transcript-turn"><strong>${turn.speaker==='teacher'?'Teacher':'Student'} · p. ${turn.page}</strong>${esc(turn.text)}</div>`).join('')}`);
 }
-function showAbout(){modal(`<p class="eyebrow">THE ORIGINAL CONVERSATION</p><h2 id="modal-title">Think your way into French.</h2><p>This independent study companion contains all 40 tracks of <strong>Language Transfer’s Introduction to French</strong>, from your supplied 157-page transcript. Course text stays in its original English and French. Only whitespace and step boundaries have been adjusted; transcription errors and the student’s mistakes are retained.</p><p>Continuous reading presents each explanation once, with optional student references. Switch to speaking practice to think and speak before revealing a response. Progress means “explored”, not “mastered”.</p><p><strong>Audio:</strong> this app uses your device’s speech synthesis, not the original recordings. Teacher passages and follow-ups switch between English and French using language markings recovered from the PDF. Missing or inconsistent source formatting can be overridden by selecting a phrase and using the French voice button. A missing French voice is reported instead of using an English voice. Synthesized pronunciation and phonetic notation may be imperfect. For the original course recordings, visit <a href="https://www.languagetransfer.org/french" target="_blank" rel="noopener">Language Transfer ↗</a>.</p><p><strong>On iPad:</strong> open the hosted app in Safari. For a home-screen app, choose Share → Add to Home Screen. Offline caching requires HTTPS (or localhost for development), a successful initial load, and available browser storage. Device voices may need to be downloaded in iPad settings.</p><p><strong>Your data:</strong> no account, microphone, analytics, or uploaded answers. Progress stays in this browser. Clearing website data, private browsing, a new device, or changing the site address can remove or separate it. Use Audio & preferences to export a backup. iPad may evict website storage.</p><p><a href="${encodeURI(course.source)}" target="_blank" rel="noopener">Read the original PDF ↗</a> · <button class="plain" data-action="settings">Audio & preferences</button></p><details><summary>Original introduction, editor notes & contents</summary><div class="front-matter">${esc(course.frontMatter)}</div></details><p class="subtle">Independent companion; not affiliated with or endorsed by Language Transfer. The course and transcript remain credited to their original creators.</p>`);}
+function showAbout(){modal(`<p class="eyebrow">THE ORIGINAL CONVERSATION</p><h2 id="modal-title">Think your way into French.</h2><p>This independent study companion contains all 40 tracks of <strong>Language Transfer’s Introduction to French</strong>, from your supplied 157-page transcript. The original English and French remain available in the transcript, PDF and speaking practice. Continuous reading omits brief praise and duplicate attempts while keeping necessary responses next to their prompts. Source transcription errors and student mistakes may still appear.</p><p>Continuous reading presents explanations and necessary responses in order. Switch to speaking practice to think and speak before revealing a response. Progress means “explored”, not “mastered”.</p><p><strong>Audio:</strong> this app uses your device’s speech synthesis, not the original recordings. Teacher passages and follow-ups switch between English and French using language markings recovered from the PDF. Missing or inconsistent source formatting can be overridden by selecting a phrase and using the French voice button. A missing French voice is reported instead of using an English voice. Synthesized pronunciation and phonetic notation may be imperfect. For the original course recordings, visit <a href="https://www.languagetransfer.org/french" target="_blank" rel="noopener">Language Transfer ↗</a>.</p><p><strong>On iPad:</strong> open the hosted app in Safari. For a home-screen app, choose Share → Add to Home Screen. Offline caching requires HTTPS (or localhost for development), a successful initial load, and available browser storage. Device voices may need to be downloaded in iPad settings.</p><p><strong>Your data:</strong> no account, microphone, analytics, or uploaded answers. Progress stays in this browser. Clearing website data, private browsing, a new device, or changing the site address can remove or separate it. Use Audio & preferences to export a backup. iPad may evict website storage.</p><p><a href="${encodeURI(course.source)}" target="_blank" rel="noopener">Read the original PDF ↗</a> · <button class="plain" data-action="settings">Audio & preferences</button></p><details><summary>Original introduction, editor notes & contents</summary><div class="front-matter">${esc(course.frontMatter)}</div></details><p class="subtle">Independent companion; not affiliated with or endorsed by Language Transfer. The course and transcript remain credited to their original creators.</p>`);}
 function loadVoices(){voices='speechSynthesis'in window?speechSynthesis.getVoices():[];if($('#voice-en'))fillVoiceSelects();}
 function fillVoiceSelects(){
  for(const lang of ['en','fr']){
@@ -360,14 +368,14 @@ function exportProgress(){
 }
 async function importProgress(e){
  const file=e.target.files[0];if(!file)return;
- try{if(file.size>3_000_000)throw Error('That file is too large for a progress backup.');const imported=validate(JSON.parse(await file.text()));if(!confirm(`Replace current progress with this backup (${imported.completed.length} explored steps)? Export your current progress first if you want to keep it.`))return;state=imported;save();applyFocus();$('#modal').close();navigate('home');toast('Progress restored. Welcome back.');}
+ try{if(file.size>3_000_000)throw Error('That file is too large for a progress backup.');const imported=validate(JSON.parse(await file.text()));if(!confirm(`Replace current progress with this backup (${imported.completed.length} explored steps)? Export your current progress first if you want to keep it.`))return;readingCleanup?.(false);readingCleanup=null;state=imported;save();applyFocus();$('#modal').close();navigate('home');toast('Progress restored. Welcome back.');}
  catch(error){toast('Could not import: '+error.message);}finally{e.target.value='';}
 }
 function applyFocus(){document.body.classList.toggle('focus',state.settings.focus);$('#focus-toggle').setAttribute('aria-pressed',state.settings.focus);$('#focus-toggle').textContent=state.settings.focus?'Exit focus mode':'Focus mode';}
 function reveal(){if(!current||!current.responses.length)return;revealed=true;$('#answer').hidden=false;const button=$('[data-action="reveal"]');button.textContent='Conversation revealed';button.setAttribute('aria-expanded','true');$('[data-action="next"]').disabled=false;$('#answer').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'});}
 async function handleAction(action){
  if(action==='begin')begin();
- else if(action==='reading-mode'||action==='practice-mode'){state.settings.mode=action==='reading-mode'?'read':'practice';save();openStep(current.id);}
+ else if(action==='reading-mode'||action==='practice-mode'){readingCleanup?.();readingCleanup=null;state.settings.mode=action==='reading-mode'?'read':'practice';save();openStep(current.id);}
  else if(action==='complete-track')markTrackRead();
  else if(action==='track-notes')showTrackNotes();
  else if(action==='achievements')showAchievements();
@@ -389,7 +397,7 @@ async function handleAction(action){
  else if(action==='test-fr')speak('Bonjour. Je veux le café. Petit à petit.','fr');
  else if(action==='export')exportProgress();
  else if(action==='import')$('#import-file').click();
- else if(action==='reset'){if(confirm('Delete all explored steps, practice bookmarks and notes on this device? Export a backup first if you want to keep them.')){state=defaults();save();applyFocus();$('#modal').close();navigate('home');toast('A fresh start.');}}
+ else if(action==='reset'){if(confirm('Delete all explored steps, practice bookmarks and notes on this device? Export a backup first if you want to keep them.')){readingCleanup?.(false);readingCleanup=null;state=defaults();save();applyFocus();$('#modal').close();navigate('home');toast('A fresh start.');}}
 }
 document.addEventListener('click',e=>{
  const b=e.target.closest('button,a.brand');if(!b||!state)return;

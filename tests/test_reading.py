@@ -138,6 +138,37 @@ with sync_playwright() as p:
     page.wait_for_timeout(200)
     assert stored()['trackNotes'] == {}
     assert stored()['notes'] == backup['notes']
+    # Replacing state while the reader is active must never resurrect the old cursor.
+    page.locator('[data-action="begin"]').click()
+    page.wait_for_timeout(200)
+    replacement = dict(backup, cursor='2-5', completed=[], readingPositions={'2':{'id':'2-5','offset':.3}})
+    page.locator('[data-action="settings"]').last.click()
+    page.locator('#import-file').set_input_files({'name':'different-progress.json','mimeType':'application/json','buffer':json.dumps(replacement).encode()})
+    page.wait_for_timeout(400)
+    assert stored()['cursor'] == '2-5'
+    assert stored()['completed'] == []
+    assert stored()['readingPositions'] == replacement['readingPositions']
+    page.locator('[data-action="begin"]').click()
+    page.wait_for_timeout(200)
+    assert 'Reading 5 /' in page.locator('#reading-live-progress').inner_text()
+    # Flush a scroll immediately on leaving, even before its animation frame runs.
+    page.evaluate("""() => {const el=document.querySelector('#reading-2-9');scrollTo(0,scrollY+el.getBoundingClientRect().top-innerHeight*.22);dispatchEvent(new Event('pagehide'));}""")
+    assert stored()['cursor'] == '2-9'
+    page.locator('[data-action="settings"]').last.click()
+    page.locator('[data-action="reset"]').click()
+    page.wait_for_timeout(400)
+    assert stored()['cursor'] == '1-1'
+    assert stored()['completed'] == []
+    assert stored()['readingPositions'] == {}
+    # Removed duplicate filler remains navigable from an old saved location.
+    old_location = dict(replacement, cursor='1-52', readingPositions={'1':{'id':'1-52','offset':.2}})
+    page.locator('[data-action="settings"]').last.click()
+    page.locator('#import-file').set_input_files({'name':'old-location.json','mimeType':'application/json','buffer':json.dumps(old_location).encode()})
+    page.wait_for_timeout(200)
+    page.locator('[data-action="begin"]').click()
+    page.wait_for_timeout(200)
+    assert stored()['cursor'] == '1-53'
+    assert not page.locator('#reading-1-52').is_visible()
     assert not errors, errors
     browser.close()
 print('PASS: 40 tracks, edited teacher text, inline responses, automatic progress, track completion, exact resume, audio, notes and backup compatibility, responsive widths.')
