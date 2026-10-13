@@ -4,9 +4,9 @@ const KEY='petit-french-progress-v1';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let course, steps=[], byId=new Map(), state, route='home', current, revealed=false, hidden=false, reviewing=false;
-let readingObserver;
+let readingCleanup;
 let sessionCount=0, sessionSeen=new Set(), voices=[], speechToken=0, speechActive=false, speechPaused=false, utterance, toastTimer;
-const defaults=()=>({version:1,completed:[],bookmarks:[],cursor:'1-1',notes:{},trackNotes:{},settings:{size:5,rate:.9,en:'',fr:'',focus:false,mode:'read'}});
+const defaults=()=>({version:1,completed:[],bookmarks:[],cursor:'1-1',notes:{},trackNotes:{},readingPositions:{},settings:{size:5,rate:.9,en:'',fr:'',focus:false,mode:'read'}});
 function validate(raw){
  if(!raw||raw.version!==1||!Array.isArray(raw.completed)||!Array.isArray(raw.bookmarks))throw Error('This is not a compatible progress backup.');
  const out=defaults();
@@ -14,6 +14,7 @@ function validate(raw){
  if(byId.has(raw.cursor))out.cursor=raw.cursor;
  if(raw.notes&&typeof raw.notes==='object')for(const [id,note] of Object.entries(raw.notes))if(byId.has(id)&&typeof note==='string')out.notes[id]=note.slice(0,4000);
  if(raw.trackNotes&&typeof raw.trackNotes==='object')for(const t of course.tracks)if(typeof raw.trackNotes[t.id]==='string')out.trackNotes[t.id]=raw.trackNotes[t.id].slice(0,12000);
+ if(raw.readingPositions&&typeof raw.readingPositions==='object')for(const t of course.tracks){const p=raw.readingPositions[t.id];if(p&&byId.has(p.id)&&trackFor(p.id).id===t.id)out.readingPositions[t.id]={id:p.id,offset:Number.isFinite(p.offset)?Math.max(0,Math.min(1,p.offset)):0};}
  const s=raw.settings||{};
  if([5,10,20].includes(s.size))out.settings.size=s.size;
  if(typeof s.rate==='number'&&s.rate>=.65&&s.rate<=1.2)out.settings.rate=s.rate;
@@ -34,7 +35,7 @@ function bar(done,total){return `<div class="progress" role="progressbar" aria-l
 function trackFor(id){return course.tracks[Number(id.split('-')[0])-1];}
 function resumeStep(track){return track.steps.find(s=>!state.completed.includes(s.id))||track.steps[0];}
 function navigate(next,focus=true){
- readingObserver?.disconnect();stopSpeech();route=next;reviewing=false;
+ readingCleanup?.();readingCleanup=null;stopSpeech();route=next;reviewing=false;
  document.querySelectorAll('[data-route]').forEach(b=>b.classList.toggle('active',b.dataset.route===next));
  $('#breadcrumb').textContent=next==='library'?'THE COMPLETE COURSE':next==='review'?'ROOM TO PRACTISE':'YOUR OWN PACE';
  if(next==='home')renderHome();else if(next==='library')renderLibrary();else renderReview();
@@ -100,15 +101,15 @@ function begin(id=state.cursor,review=false,reset=true){
  openStep(id);
 }
 function openStep(id){
- readingObserver?.disconnect();stopSpeech();current=byId.get(id);revealed=false;hidden=false;route='lesson';
+ readingCleanup?.();readingCleanup=null;stopSpeech();current=byId.get(id);revealed=false;hidden=false;route='lesson';
  if(!reviewing){state.cursor=id;save();}
  document.querySelectorAll('[data-route]').forEach(b=>b.classList.toggle('active',b.dataset.route===(reviewing?'review':'home')));
  $('#breadcrumb').textContent=`${reviewing?'PRACTICE':'YOUR CONVERSATION'} / TRACK ${trackFor(id).id}`;
- renderLesson();window.scrollTo(0,0);if(!reviewing&&state.settings.mode==='read'&&current.index>0)document.getElementById('reading-'+id)?.scrollIntoView({block:'start'});$('#main').focus({preventScroll:true});
+ renderLesson();window.scrollTo(0,0);if(!reviewing&&state.settings.mode==='read'){const el=document.getElementById('reading-'+id),pos=state.readingPositions[trackFor(id).id];if(el&&(current.index>0||pos?.offset>0))window.scrollTo(0,el.getBoundingClientRect().top+scrollY+(pos?.id===id?pos.offset*el.offsetHeight:0)-innerHeight*.22);startReadingProgress();}$('#main').focus({preventScroll:true});
 }
 // Paragraphs follow complete expressions and questions, not speaker turn length.
 // Offsets retain every original character and its language for playback.
-function readingBlocks(step){
+function sourceReadingBlocks(step){
  const runs=step.audio?.length?step.audio:[{lang:'en',text:step.text}];
  const text=runs.map(r=>r.text).join('');
  let at=0;
@@ -128,6 +129,31 @@ function readingBlocks(step){
  }
  return blocks;
 }
+function editedTeacher(step){
+ // Remove encouragement, not corrections or explanations. Keep the source intact.
+ const audio=(step.audio?.length?step.audio:[{lang:'en',text:step.text}]).map(run=>({...run}));
+ for(const run of audio)if(run.lang==='en')run.text=run.text.replace(/(^\s*|[.!?]\s+)(?:very good|good|excellent|perfect)(?:[.!]+\s*|,?\s+(?=(?:so|and|but)\b))([a-z]?)/gi,(_,prefix,letter)=>prefix+letter.toUpperCase());
+ return {...step,audio};
+}
+function normalizedReading(text){return text.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();}
+function readingBlocks(step){return sourceReadingBlocks(editedTeacher(step)).filter(b=>b.text.trim());}
+function neededResponses(step){
+ const track=trackFor(step.id),next=track.steps[step.index+1];
+ const nextText=next?normalizedReading(editedTeacher(next).audio.map(r=>r.text).join('')):'';
+ const french=normalizedReading((step.audio||[]).filter(r=>r.lang==='fr').map(r=>r.text).join(' '));
+ return step.responses.filter(response=>{
+  const text=normalizedReading(response.text);
+  if(!text||/^(?:uh huh|mm hmm|ah|oh)$/.test(text))return false;
+  // A teacher restatement supplies the answer; repeating it adds no information.
+  if(nextText===text||nextText.startsWith(text+' '))return false;
+  // Omit simple pronunciation echoes only when no question was asked.
+  if(!step.text.includes('?')&&(' '+french+' ').includes(' '+text+' '))return false;
+  return true;
+ });
+}
+function inlineResponses(step){
+ return neededResponses(step).map((response,index)=>`<div class="inline-response"><small>Student response · may include mistakes</small><div class="reading-line"><p>${languageText(response.audio,response.text)}</p><button class="line-listen" data-read-response="${step.id}" data-response-index="${index}">▷ Listen</button></div></div>`).join('');
+}
 function readingParagraphs(step){
  return readingBlocks(step).map((block,index)=>`<div class="reading-line ${block.kind}"><p>${languageText(block.audio,block.text)}</p><button class="line-listen" data-read-audio="${step.id}" data-read-block="${index}" aria-label="Listen to paragraph ${index+1} of step ${step.index+1}">▷ Listen</button></div>`).join('');
 }
@@ -137,8 +163,16 @@ function showTrackNotes(){
  $('#track-note').addEventListener('input',e=>{state.trackNotes[track.id]=e.target.value;save();});
 }
 function readingGroups(track){
- const groups=[];
- for(let i=0;i<track.steps.length;i+=6)groups.push(track.steps.slice(i,i+6));
+ const groups=[];let group=[];
+ for(const step of track.steps){
+  group.push(step);
+  const next=track.steps[step.index+1];
+  const nextText=next?normalizedReading(editedTeacher(next).audio.map(r=>r.text).join('')):'';
+  const continuesAnswer=step.responses.some(r=>{const answer=normalizedReading(r.text);return answer&&(nextText===answer||nextText.startsWith(answer+' '));});
+  // Keep a prompt and the teacher's answer together across section boundaries.
+  if(group.length>=6&&!continuesAnswer){groups.push(group);group=[];}
+ }
+ if(group.length)groups.push(group);
  return groups;
 }
 function readerTitle(group,index){
@@ -148,25 +182,66 @@ function readerTitle(group,index){
 }
 function renderReader(){
  const track=trackFor(current.id),groups=readingGroups(track);
- $('#main').innerHTML=`<section class="lesson-heading"><div class="row"><p class="eyebrow">READ AT YOUR OWN PACE</p><button class="plain" data-route="home">Save & leave ↗</button></div><h1>Track ${String(track.id).padStart(2,'0')} <span class="subtle">/ Reading</span></h1><p class="intro">Follow the ideas. Keep scrolling when you’re ready.</p><div class="reader-toolbar"><button class="secondary" data-action="practice-mode">Switch to speaking practice</button><button class="secondary" data-action="track-notes">Lesson notes</button><button class="plain" data-action="transcript">Original transcript ↗</button></div><p class="reader-help">Explanations appear once. Student attempts are optional references, not answer keys. Mark a section explored when you choose; scrolling only saves your place.</p><div class="reading-legend"><span class="teacher-key">Teacher · explanations & examples</span><span class="student-key">Student · optional attempts</span></div><p id="reader-progress" role="status">${progress(track)} / ${track.steps.length} steps explored</p></section>
- <div class="reading-layout"><nav class="reading-outline" aria-label="Reading sections"><p class="eyebrow">IN THIS TRACK</p>${groups.map((g,i)=>`<a href="#reading-${g[0].id}">${String(i+1).padStart(2,'0')} · ${esc(readerTitle(g,i))}</a>`).join('')}</nav><div class="reading-stream">${groups.map((group,i)=>`<section class="reading-section" aria-labelledby="section-${i}"><header><p class="eyebrow">${String(i+1).padStart(2,'0')} / ${String(groups.length).padStart(2,'0')} · STEPS ${group[0].index+1}–${group.at(-1).index+1}</p><h2 id="section-${i}">${esc(readerTitle(group,i))}</h2></header>${group.map(step=>`<article class="reading-passage" id="reading-${step.id}" data-reading-id="${step.id}"><div class="reading-copy">${readingParagraphs(step)}</div><button class="passage-save plain" data-read-bookmark="${step.id}" aria-label="${state.bookmarks.includes(step.id)?'Remove step from practice':'Save step for practice'}" aria-pressed="${state.bookmarks.includes(step.id)}">${state.bookmarks.includes(step.id)?'✓ Saved':'+ Practice'}</button></article>`).join('')}
- ${group.some(s=>s.responses.length)?`<details class="student-reference"><summary>Student attempts · optional reference</summary><p class="subtle">These may contain mistakes. Corrections remain in the main reading, in source order.</p>${group.filter(s=>s.responses.length).map(s=>`<div class="student-attempt"><small>Student · after step ${s.index+1}</small>${s.responses.map(r=>`<p>${languageText(r.audio,r.text)}</p>`).join('')}</div>`).join('')}</details>`:''}
+ $('#main').innerHTML=`<section class="lesson-heading"><div class="row"><p class="eyebrow">READ AT YOUR OWN PACE</p><button class="plain" data-route="home">Save & leave ↗</button></div><h1>Track ${String(track.id).padStart(2,'0')} <span class="subtle">/ Reading</span></h1><p class="intro">Follow the ideas. Keep scrolling when you’re ready.</p><div class="reader-toolbar"><button class="secondary" data-action="practice-mode">Switch to speaking practice</button><button class="secondary" data-action="track-notes">Lesson notes</button><button class="plain" data-action="transcript">Original transcript ↗</button></div><p class="reader-help">Read in order: prompts, responses and explanations. Repeated answers and brief praise are omitted. Progress and your exact reading place save as you scroll; reaching the end marks the track read.</p><div class="reading-legend"><span class="teacher-key">Teacher · explanations & examples</span><span class="student-key">Student · responses in context</span></div><p id="reader-progress" role="status">${progress(track)} / ${track.steps.length} steps explored</p></section>
+ <div class="reading-layout"><nav class="reading-outline" aria-label="Reading sections"><p class="eyebrow">IN THIS TRACK</p>${groups.map((g,i)=>`<a href="#reading-${g[0].id}">${String(i+1).padStart(2,'0')} · ${esc(readerTitle(g,i))}</a>`).join('')}</nav><div class="reading-stream">${groups.map((group,i)=>`<section class="reading-section" aria-labelledby="section-${i}"><header><p class="eyebrow">${String(i+1).padStart(2,'0')} / ${String(groups.length).padStart(2,'0')} · STEPS ${group[0].index+1}–${group.at(-1).index+1}</p><h2 id="section-${i}">${esc(readerTitle(group,i))}</h2></header>${group.map(step=>`<article class="reading-passage" id="reading-${step.id}" data-reading-id="${step.id}"><div class="reading-copy">${readingParagraphs(step)}</div>${inlineResponses(step)}<button class="passage-save plain" data-read-bookmark="${step.id}" aria-label="${state.bookmarks.includes(step.id)?'Remove step from practice':'Save step for practice'}" aria-pressed="${state.bookmarks.includes(step.id)}">${state.bookmarks.includes(step.id)?'✓ Saved':'+ Practice'}</button></article>`).join('')}
+
  <button class="secondary section-complete" data-read-complete="${i}" aria-pressed="${group.every(s=>state.completed.includes(s.id))}">${group.every(s=>state.completed.includes(s.id))?'✓ Section explored':'Mark this section explored'}</button></section>`).join('')}
- <footer class="reading-end"><h2>A good place to pause.</h2><p>Your reading place is saved. Continue whenever you feel ready.</p>${course.tracks[track.id]?`<button class="primary" data-track="${track.id+1}">Next track →</button>`:''}<button class="secondary" data-route="home">Save & leave</button></footer></div></div>
- <div class="reader-audio"><button class="audio-button" data-action="pause-speech">Ⅱ Pause</button><button class="audio-button" data-action="stop-speech">□ Stop</button><button class="audio-button" data-action="speak-selection">▷ Selected French</button><span class="audio-status" role="status"></span></div>`;
- readingObserver=new IntersectionObserver(entries=>{
-  if(route!=='lesson'||state.settings.mode!=='read')return;
-  const visible=entries.filter(e=>e.isIntersecting).sort((a,b)=>a.boundingClientRect.top-b.boundingClientRect.top);
-  if(visible.length){current=byId.get(visible[0].target.dataset.readingId);state.cursor=current.id;save();}
- },{rootMargin:'-15% 0px -55% 0px',threshold:0});
- document.querySelectorAll('[data-reading-id]').forEach(el=>readingObserver.observe(el));
+ <footer class="reading-end"><button class="secondary" data-action="complete-track">Mark entire track read</button><h2>A good place to pause.</h2><p>Your reading place is saved. Continue whenever you feel ready.</p>${course.tracks[track.id]?`<button class="primary" data-track="${track.id+1}">Next track →</button>`:''}<button class="secondary" data-route="home">Save & leave</button></footer></div></div>
+ <div class="reader-audio"><span id="reading-live-progress" class="reading-live-progress"></span><button class="audio-button" data-action="pause-speech">Ⅱ Pause</button><button class="audio-button" data-action="stop-speech">□ Stop</button><button class="audio-button" data-action="speak-selection">▷ Selected French</button><span class="audio-status" role="status"></span></div>`;
  updateAudioButtons();
+}
+function updateReadingProgress(){
+ if(route!=='lesson'||reviewing||state.settings.mode!=='read')return;
+ const track=trackFor(current.id),count=progress(track);
+ const label=`Track ${track.id} · ${count} / ${track.steps.length} read · ${Math.round(count/track.steps.length*100)}%`;
+ const status=$('#reader-progress');if(status)status.textContent=label;
+ const live=$('#reading-live-progress');if(live)live.textContent=label;
+ document.querySelectorAll('[data-read-complete]').forEach(button=>{
+  const complete=readingGroups(track)[Number(button.dataset.readComplete)].every(s=>state.completed.includes(s.id));
+  button.textContent=complete?'✓ Section read':'Mark this section read';button.setAttribute('aria-pressed',complete);
+ });
+ const finish=$('[data-action="complete-track"]');if(finish)finish.textContent=count===track.steps.length?'✓ Track read':'Mark entire track read';
+}
+function markTrackRead(){
+ const track=trackFor(current.id);
+ for(const step of track.steps)if(!state.completed.includes(step.id))state.completed.push(step.id);
+ save();updateReadingProgress();
+}
+function startReadingProgress(){
+ const passages=[...document.querySelectorAll('[data-reading-id]')];
+ const seen=new Set(),track=trackFor(current.id);let frame=0,timer=0,lastY=scrollY;
+ const sync=(mark=false)=>{
+  if(route!=='lesson'||reviewing||state.settings.mode!=='read'||$('#modal').open||document.hidden)return;
+  const line=innerHeight*.22;
+  const rects=passages.map(el=>({el,rect:el.getBoundingClientRect()}));
+  let target=rects.find(({rect})=>rect.top<=line&&rect.bottom>line)||rects.find(({rect})=>rect.top>line);
+  if(!target&&rects.length)target=rects.at(-1);
+  for(const {el,rect} of rects){
+   const id=el.dataset.readingId;
+   if(rect.top<innerHeight*.85&&rect.bottom>line)seen.add(id);
+   if(mark&&seen.has(id)&&rect.bottom<=innerHeight*.85&&!state.completed.includes(id))state.completed.push(id);
+  }
+  // Only update a location within the lesson, not when scrolling up to its toolbar.
+  if(target&&target.rect.top<innerHeight*.85){
+   current=byId.get(target.el.dataset.readingId);state.cursor=current.id;
+   state.readingPositions[track.id]={id:current.id,offset:Math.max(0,Math.min(1,(line-target.rect.top)/target.rect.height))};
+  }
+  if(mark&&$('.reading-end').getBoundingClientRect().top<innerHeight*.75)markTrackRead();
+  save();updateReadingProgress();
+ };
+ const onScroll=()=>{if(scrollY===lastY)return;lastY=scrollY;if(!frame)frame=requestAnimationFrame(()=>{frame=0;sync();});clearTimeout(timer);timer=setTimeout(()=>sync(true),350);};
+ const onLeave=()=>sync(true);
+ window.addEventListener('scroll',onScroll,{passive:true});window.addEventListener('pagehide',onLeave);
+ const onVisibility=()=>{if(document.hidden){save();}else sync();};document.addEventListener('visibilitychange',onVisibility);
+ // Initial render/resume records visibility but does not complete skipped passages.
+ sync();
+ readingCleanup=()=>{sync(true);cancelAnimationFrame(frame);clearTimeout(timer);window.removeEventListener('scroll',onScroll);window.removeEventListener('pagehide',onLeave);document.removeEventListener('visibilitychange',onVisibility);};
 }
 function completeReadingSection(button){
  const track=trackFor(current.id),group=readingGroups(track)[Number(button.dataset.readComplete)];
  for(const step of group)if(!state.completed.includes(step.id))state.completed.push(step.id);
  save();button.textContent='✓ Section explored';button.setAttribute('aria-pressed','true');
- $('#reader-progress').textContent=`${progress(track)} / ${track.steps.length} steps explored`;
+ updateReadingProgress();
 }
 function renderLesson(){
  if(!reviewing&&state.settings.mode==='read'){renderReader();return;}
@@ -293,6 +368,7 @@ function reveal(){if(!current||!current.responses.length)return;revealed=true;$(
 async function handleAction(action){
  if(action==='begin')begin();
  else if(action==='reading-mode'||action==='practice-mode'){state.settings.mode=action==='reading-mode'?'read':'practice';save();openStep(current.id);}
+ else if(action==='complete-track')markTrackRead();
  else if(action==='track-notes')showTrackNotes();
  else if(action==='achievements')showAchievements();
  else if(action==='dismiss-reward')$('.celebration')?.remove();
@@ -320,10 +396,11 @@ document.addEventListener('click',e=>{
  if(b.matches('a.brand')){e.preventDefault();navigate('home');}
  else if(b.dataset.route)navigate(b.dataset.route);
  else if(b.dataset.size){state.settings.size=Number(b.dataset.size);save();renderHome();}
- else if(b.dataset.track)begin(resumeStep(course.tracks[Number(b.dataset.track)-1]).id);
+ else if(b.dataset.track){const track=course.tracks[Number(b.dataset.track)-1];begin(state.settings.mode==='read'&&state.readingPositions[track.id]?state.readingPositions[track.id].id:resumeStep(track).id);}
  else if(b.dataset.step)begin(b.dataset.step);
  else if(b.dataset.review)begin(b.dataset.review,true);
  else if(b.dataset.readComplete!==undefined)completeReadingSection(b);
+ else if(b.dataset.readResponse){const response=neededResponses(byId.get(b.dataset.readResponse))[Number(b.dataset.responseIndex)];speakSegments(response.audio||[{lang:'en',text:response.text}]);}
  else if(b.dataset.readAudio){const step=byId.get(b.dataset.readAudio);speakSegments(b.dataset.readBlock!==undefined?readingBlocks(step)[Number(b.dataset.readBlock)].audio:step.audio);}
  else if(b.dataset.readBookmark){const id=b.dataset.readBookmark,i=state.bookmarks.indexOf(id);if(i<0)state.bookmarks.push(id);else state.bookmarks.splice(i,1);save();b.setAttribute('aria-pressed',i<0);b.textContent=i<0?'✓ Saved':'+ Practice';b.setAttribute('aria-label',i<0?'Remove step from practice':'Save step for practice');}
  else if(b.dataset.speak){const segments=b.dataset.speak==='teacher'?current.audio:b.dataset.speak==='response'?current.responses.flatMap(r=>r.audio):current.followupAudio;speakSegments(segments);}

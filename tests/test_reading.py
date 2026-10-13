@@ -1,9 +1,13 @@
 """Reader regression checks; serves static files through Playwright routing."""
 import json
+import re
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 COURSE = json.loads((ROOT / 'assets/course.json').read_text())
+def edited_text(step):
+    return ''.join(re.sub(r'(^\s*|[.!?]\s+)(?:very good|good|excellent|perfect)(?:[.!]+\s*|,?\s+(?=(?:so|and|but)\b))([a-z]?)', lambda m:m[1]+m[2].upper(), r['text'], flags=re.I) if r['lang']=='en' else r['text'] for r in step['audio']).strip()
+
 with sync_playwright() as p:
     browser = p.chromium.launch(executable_path='/usr/bin/chromium', args=['--no-sandbox'])
     page = browser.new_page(viewport={'width': 1024, 'height': 1366}, service_workers='block')
@@ -23,8 +27,8 @@ with sync_playwright() as p:
     assert page.locator('[data-action="reveal"]').count() == 0
     assert page.locator('.reading-passage').count() == len(COURSE['tracks'][0]['steps'])
     # Every teacher passage is rendered once, with exact text and language runs intact.
-    actual = page.locator('.reading-copy').evaluate_all('(els)=>els.map(el=>Array.from(el.querySelectorAll("p")).map(p=>p.textContent).join(""))')
-    expected = [''.join(r['text'] for r in s['audio']) for s in COURSE['tracks'][0]['steps']]
+    actual = page.locator('.reading-copy').evaluate_all('(els)=>els.map(el=>Array.from(el.querySelectorAll("p")).map(p=>p.textContent).join("").trim())')
+    expected = [edited_text(s) for s in COURSE['tracks'][0]['steps']]
     assert actual == expected
     page.screenshot(path='/tmp/reading-ipad.png', full_page=False)
     page.locator('[data-read-complete="0"]').click()
@@ -34,7 +38,7 @@ with sync_playwright() as p:
     assert len(stored()['completed']) == 6
     page.locator('#reading-1-8').scroll_into_view_if_needed()
     page.wait_for_timeout(250)
-    assert len(stored()['completed']) == 6
+    assert len(stored()['completed']) >= 6
     page.locator('[data-read-bookmark="1-8"]').click()
     assert page.locator('[data-read-audio="1-8"]').first.is_visible()
     assert page.locator('[data-read-note]').count() == 0
@@ -59,15 +63,45 @@ with sync_playwright() as p:
     for track in COURSE['tracks']:
         page.locator('[data-route="library"]').first.click()
         page.locator(f'[data-track="{track["id"]}"]').click()
-        actual = page.locator('.reading-copy').evaluate_all('(els)=>els.map(el=>Array.from(el.querySelectorAll("p")).map(p=>p.textContent).join(""))')
-        expected = [''.join(r['text'] for r in s['audio']) for s in track['steps']]
+        actual = page.locator('.reading-copy').evaluate_all('(els)=>els.map(el=>Array.from(el.querySelectorAll("p")).map(p=>p.textContent).join("").trim())')
+        expected = [edited_text(s) for s in track['steps']]
         assert actual == expected, (track['id'], [(a,b) for a,b in zip(actual,expected) if a!=b][:1])
     page.locator('[data-route="library"]').first.click()
     page.locator('[data-track="3"]').click()
     paragraphs = lambda id: [t.strip() for t in page.locator(f'#reading-{id} .reading-copy p').all_text_contents()]
-    assert paragraphs('3-7') == ['Quelque chose.', 'Good and these are two words in French –', 'quelque chose.', 'Do you want something?']
+    assert paragraphs('3-7') == ['Quelque chose.', 'And these are two words in French –', 'quelque chose.', 'Do you want something?']
+    assert page.locator('.student-reference').count() == 0
+    assert 'Reservation.' in page.locator('#reading-3-2 .inline-response').inner_text()
+    assert paragraphs('3-18') == ['Je veux commander quelque chose.', 'Do you want to order something?']
+    assert page.locator('#reading-3-17 .inline-response').count() == 0
+    assert page.locator('#reading-3-6').evaluate('(el)=>el.closest(".reading-section")===document.querySelector("#reading-3-7").closest(".reading-section")')
     assert paragraphs('3-8') == ['Tu veux quelque chose?', 'Do you want to reserve something?']
-    assert paragraphs('3-16') == ['Tu veux recommander quelque chose.', 'Very good. And if we lose the RE, the /ruh/ at the beginning of recommander, we will get commander, which means to order.', 'Commander, to order.']
+    assert paragraphs('3-16') == ['Tu veux recommander quelque chose.', 'And if we lose the RE, the /ruh/ at the beginning of recommander, we will get commander, which means to order.', 'Commander, to order.']
+    # Scrolling updates both resume position and completion without manual buttons.
+    page.evaluate("document.querySelector('#reading-3-17').scrollIntoView({block:'start'})")
+    page.wait_for_timeout(500)
+    assert stored()['cursor'] == '3-17'
+    assert stored()['readingPositions']['3']['id'] == '3-17'
+    page.evaluate("document.querySelector('#reading-3-19').scrollIntoView({block:'start'})")
+    page.wait_for_timeout(500)
+    assert '3-17' in stored()['completed']
+    page.evaluate("document.querySelector('.reading-end').scrollIntoView({block:'center'})")
+    page.wait_for_timeout(500)
+    assert all(s['id'] in stored()['completed'] for s in COURSE['tracks'][2]['steps'])
+    assert '100%' in page.locator('#reading-live-progress').inner_text()
+    page.locator('[data-route="home"]').first.click()
+    assert '31 of 31 steps explored' in page.locator('.continue-card').inner_text()
+    page.locator('[data-action="begin"]').click()
+    # Resume a point inside a long paragraph, not merely its original turn.
+    page.evaluate("""() => {const el=document.querySelector('#reading-3-9');scrollTo(0,scrollY+el.getBoundingClientRect().top+el.offsetHeight*.45-innerHeight*.22)}""")
+    page.wait_for_timeout(500)
+    location = stored()['readingPositions']['3']
+    assert location['id']=='3-9' and abs(location['offset']-.45)<.02
+    page.reload()
+    page.locator('[data-action="begin"]').click()
+    page.wait_for_timeout(500)
+    assert stored()['readingPositions']['3']['id'] == location['id']
+    assert abs(stored()['readingPositions']['3']['offset']-location['offset'])<.02
     # Stub only the browser voice API to verify each visible Listen plays its own paragraph.
     page.evaluate("""() => {
       window.spoken = [];
@@ -97,6 +131,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(200)
     assert stored()['trackNotes'] == backup['trackNotes']
     assert stored()['notes'] == backup['notes']
+    assert stored()['readingPositions'] == backup['readingPositions']
     del backup['trackNotes']
     page.locator('[data-action="settings"]').last.click()
     page.locator('#import-file').set_input_files({'name':'old-progress.json','mimeType':'application/json','buffer':json.dumps(backup).encode()})
@@ -105,4 +140,4 @@ with sync_playwright() as p:
     assert stored()['notes'] == backup['notes']
     assert not errors, errors
     browser.close()
-print('PASS: 40 tracks, source fidelity, progress, notes, bookmarks, resume, mode switching, responsive widths.')
+print('PASS: 40 tracks, edited teacher text, inline responses, automatic progress, track completion, exact resume, audio, notes and backup compatibility, responsive widths.')

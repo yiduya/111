@@ -22,13 +22,13 @@ For a quick test on a computer, open `dist/petit-a-petit.html` in a browser. It 
 ## Learning flow
 
 - **Continuous reading is the default.** Read a complete track by scrolling, without reveal gates, next-step buttons or forced breaks.
-- Explanations appear once in source order, grouped into sections of six source steps. Complete French expressions and questions get their own paragraphs; vocabulary embedded in explanations stays inline. Teacher text uses green accents and optional student attempts use purple, with explicit labels. French expressions also serve as section signposts. These are reading aids, not rewritten lesson summaries.
-- Student attempts are in optional section references, clearly identified as potentially incorrect. Teacher corrections remain in the main reading. The original transcript and PDF remain available.
-- Scrolling saves the current reading passage but does not award completion or points. Use **Mark this section explored** to record a section once; revisiting cannot earn duplicate points.
+- Explanations appear once in source order, grouped into reading sections that keep prompts and their following answers together. Complete French expressions and questions get their own paragraphs; vocabulary embedded in explanations stays inline. French phrases have a pale green highlight. Necessary student responses appear next to their prompts in purple, with explicit labels. French expressions also serve as section signposts. These are reading aids, not rewritten lesson summaries.
+- The reading view removes brief praise and duplicate answers. When the next teacher passage already supplies the answer, it is shown only once; otherwise the student response stays beside its prompt, clearly identified as potentially incorrect. Teacher corrections remain in order. The original transcript, practice text and PDF remain unchanged.
+- Scrolling saves a per-track reading location, including the position within a long passage. Viewed passages count as read after scrolling past them; reaching the end marks the track read. A live progress indicator stays visible. **Mark entire track read** can restore a track that an older version failed to record. Section marking remains available; revisiting cannot earn duplicate points.
 - Use the visible **Listen** button beside any paragraph to hear just that paragraph, or save a passage in **My practice**. **Lesson notes** provides one notebook per track. Practice still has passage scratchpads; earlier passage notes remain available inside Lesson notes. Existing notes, bookmarks, progress and backups remain compatible.
 - Switch to **speaking practice** for the original think/reveal flow and 5-, 10- or 20-step sessions. The chosen mode is saved. Saved practice leaves the main course position unchanged.
 
-“Explored” records sections or practice steps you explicitly completed. It does not grade correctness or certify mastery. All tracks are available from the start.
+“Explored” records reading progress, manual completion and completed practice steps. It does not grade correctness or certify mastery. All tracks are available from the start.
 
 Reader regression checks (Python Playwright and Chromium required):
 
@@ -37,7 +37,7 @@ node --check app.js
 python tests/test_reading.py
 ```
 
-These checks cover all 40 tracks for source-text preservation, plus saved position, explicit section completion, bookmarks, notes, mode switching and mobile/tablet/desktop overflow. They use local request routing and need no running web server.
+These checks cover all 40 tracks for edited-text preservation, contextual responses, automatic reading progress, whole-track and section completion, precise saved position, bookmarks, notes, mode switching and mobile/tablet/desktop overflow. They use local request routing and need no running web server.
 
 ## Voice
 
