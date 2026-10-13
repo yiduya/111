@@ -22,10 +22,10 @@ For a quick test on a computer, open `dist/petit-a-petit.html` in a browser. It 
 ## Learning flow
 
 - **Continuous reading is the default.** Read a complete track by scrolling, without reveal gates, next-step buttons or forced breaks.
-- Explanations appear once in source order, grouped into sections of six source steps. Long passages are divided into paragraphs; French expressions are highlighted and used as section signposts. These are reading aids, not rewritten lesson summaries.
+- Explanations appear once in source order, grouped into sections of six source steps. Complete French expressions and questions get their own paragraphs; vocabulary embedded in explanations stays inline. Teacher text uses green accents and optional student attempts use purple, with explicit labels. French expressions also serve as section signposts. These are reading aids, not rewritten lesson summaries.
 - Student attempts are in optional section references, clearly identified as potentially incorrect. Teacher corrections remain in the main reading. The original transcript and PDF remain available.
 - Scrolling saves the current reading passage but does not award completion or points. Use **Mark this section explored** to record a section once; revisiting cannot earn duplicate points.
-- Expand a passage’s optional tools to listen, save it in **My practice**, or write a note. Existing notes, bookmarks, progress and backups remain compatible.
+- Use the visible **Listen** button beside any paragraph to hear just that paragraph, or save a passage in **My practice**. **Lesson notes** provides one notebook per track. Practice still has passage scratchpads; earlier passage notes remain available inside Lesson notes. Existing notes, bookmarks, progress and backups remain compatible.
 - Switch to **speaking practice** for the original think/reveal flow and 5-, 10- or 20-step sessions. The chosen mode is saved. Saved practice leaves the main course position unchanged.
 
 “Explored” records sections or practice steps you explicitly completed. It does not grade correctness or certify mastery. All tracks are available from the start.

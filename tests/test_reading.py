@@ -23,7 +23,7 @@ with sync_playwright() as p:
     assert page.locator('[data-action="reveal"]').count() == 0
     assert page.locator('.reading-passage').count() == len(COURSE['tracks'][0]['steps'])
     # Every teacher passage is rendered once, with exact text and language runs intact.
-    actual = page.locator('.reading-copy').evaluate_all('(els)=>els.map(el=>el.textContent)')
+    actual = page.locator('.reading-copy').evaluate_all('(els)=>els.map(el=>Array.from(el.querySelectorAll("p")).map(p=>p.textContent).join(""))')
     expected = [''.join(r['text'] for r in s['audio']) for s in COURSE['tracks'][0]['steps']]
     assert actual == expected
     page.screenshot(path='/tmp/reading-ipad.png', full_page=False)
@@ -35,11 +35,16 @@ with sync_playwright() as p:
     page.locator('#reading-1-8').scroll_into_view_if_needed()
     page.wait_for_timeout(250)
     assert len(stored()['completed']) == 6
-    page.locator('#reading-1-8 summary').click()
     page.locator('[data-read-bookmark="1-8"]').click()
-    page.locator('[data-read-note="1-8"]').fill('Remember this expression')
+    assert page.locator('[data-read-audio="1-8"]').first.is_visible()
+    assert page.locator('[data-read-note]').count() == 0
+    page.locator('[data-action="track-notes"]').click()
+    page.locator('#track-note').fill('Remember this expression')
+    page.locator('[data-action="close-dialog"]').click()
     assert '1-8' in stored()['bookmarks']
-    assert stored()['notes']['1-8'] == 'Remember this expression'
+    assert stored()['trackNotes']['1'] == 'Remember this expression'
+    page.locator('#reading-1-8').scroll_into_view_if_needed()
+    page.wait_for_timeout(250)
     cursor = stored()['cursor']
     page.reload()
     page.locator('[data-action="begin"]').click()
@@ -47,18 +52,57 @@ with sync_playwright() as p:
     assert stored()['cursor'] == cursor
     page.locator('[data-action="practice-mode"]').click()
     assert page.locator('.lesson-card').count() == 1
+    page.locator('#note').fill('Practice note preserved')
     page.locator('[data-action="reading-mode"]').click()
     assert page.locator('.reading-stream').count() == 1
     # All 40 tracks retain text in order, even split passages and punctuation.
     for track in COURSE['tracks']:
         page.locator('[data-route="library"]').first.click()
         page.locator(f'[data-track="{track["id"]}"]').click()
-        actual = page.locator('.reading-copy').evaluate_all('(els)=>els.map(el=>el.textContent)')
+        actual = page.locator('.reading-copy').evaluate_all('(els)=>els.map(el=>Array.from(el.querySelectorAll("p")).map(p=>p.textContent).join(""))')
         expected = [''.join(r['text'] for r in s['audio']) for s in track['steps']]
         assert actual == expected, (track['id'], [(a,b) for a,b in zip(actual,expected) if a!=b][:1])
+    page.locator('[data-route="library"]').first.click()
+    page.locator('[data-track="3"]').click()
+    paragraphs = lambda id: [t.strip() for t in page.locator(f'#reading-{id} .reading-copy p').all_text_contents()]
+    assert paragraphs('3-7') == ['Quelque chose.', 'Good and these are two words in French –', 'quelque chose.', 'Do you want something?']
+    assert paragraphs('3-8') == ['Tu veux quelque chose?', 'Do you want to reserve something?']
+    assert paragraphs('3-16') == ['Tu veux recommander quelque chose.', 'Very good. And if we lose the RE, the /ruh/ at the beginning of recommander, we will get commander, which means to order.', 'Commander, to order.']
+    # Stub only the browser voice API to verify each visible Listen plays its own paragraph.
+    page.evaluate("""() => {
+      window.spoken = [];
+      window.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
+      speechSynthesis.getVoices = () => [{name:'English',lang:'en-US',voiceURI:'en'}, {name:'French',lang:'fr-FR',voiceURI:'fr'}];
+      speechSynthesis.speak = u => { window.spoken.push(u.text); if(u.onend)u.onend(); };
+    }""")
+    page.locator('[data-read-audio="3-7"][data-read-block="2"]').click()
+    page.wait_for_timeout(250)
+    assert ''.join(page.evaluate('window.spoken')).strip() == 'quelque chose.'
+    page.locator('#reading-3-7').scroll_into_view_if_needed()
+    page.screenshot(path='/tmp/refined-reading-ipad.png', full_page=False)
     for width in [390, 768, 1440]:
         page.set_viewport_size({'width': width, 'height': 1000})
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+    page.set_viewport_size({'width':390,'height':844})
+    page.locator('#reading-3-16').scroll_into_view_if_needed()
+    page.screenshot(path='/tmp/refined-reading-mobile.png', full_page=False)
+    page.reload()
+    page.locator('[data-action="begin"]').click()
+    assert stored()['trackNotes']['1'] == 'Remember this expression'
+    assert 'Practice note preserved' in stored()['notes'].values()
+    backup = stored()
+    page.on('dialog', lambda dialog: dialog.accept())
+    page.locator('[data-action="settings"]').last.click()
+    page.locator('#import-file').set_input_files({'name':'progress.json','mimeType':'application/json','buffer':json.dumps(backup).encode()})
+    page.wait_for_timeout(200)
+    assert stored()['trackNotes'] == backup['trackNotes']
+    assert stored()['notes'] == backup['notes']
+    del backup['trackNotes']
+    page.locator('[data-action="settings"]').last.click()
+    page.locator('#import-file').set_input_files({'name':'old-progress.json','mimeType':'application/json','buffer':json.dumps(backup).encode()})
+    page.wait_for_timeout(200)
+    assert stored()['trackNotes'] == {}
+    assert stored()['notes'] == backup['notes']
     assert not errors, errors
     browser.close()
 print('PASS: 40 tracks, source fidelity, progress, notes, bookmarks, resume, mode switching, responsive widths.')
