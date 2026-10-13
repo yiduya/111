@@ -11,3 +11,35 @@
 /* Progress celebrates completed effort; every award is derived from saved steps. */
 .reward-panel{padding:25px 28px;margin:25px 0;background:#fffdf6;border:1px solid #e4ddc9;border-radius:14px;text-align:left}.reward-panel .eyebrow{margin-bottom:8px;color:#8a6543}.reward-panel h2{font-size:26px;margin-bottom:0}.reward-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin:25px 0}.reward-stats strong{display:block;font:32px Georgia,serif;color:var(--green);letter-spacing:-.8px}.reward-stats small{font:13px ui-sans-serif,sans-serif;color:var(--muted);letter-spacing:0}.reward-stats span{display:block;font-size:11px;margin-top:8px;color:var(--muted);line-height:1.5}.next-milestone{display:flex;align-items:center;gap:18px;padding-top:18px;border-top:1px solid #e6e0d1}.next-milestone>span{font-size:35px;color:#ad7c44}.next-milestone>div{flex:1}.next-milestone strong{font-size:13px;font-weight:550}.next-milestone .progress{margin:12px 0 0;background:#eee8da}.reward-panel .reward-note{font-size:11px;line-height:1.8;margin:15px 0 0;color:var(--muted)}.momentum-strip{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:12px;color:var(--muted);margin:-8px 0 20px;padding:8px 16px;border:1px solid #e4ddc9;border-radius:9px;background:#fffdf6}.momentum-strip strong{color:#795d3e;font-weight:550}.momentum-strip .plain{font-size:11px;white-space:nowrap}.milestone-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:24px 0}.milestone-badge{padding:20px;border:1px solid var(--line);background:#f2f4ef;border-radius:12px;color:var(--muted)}.milestone-badge.earned{background:#f7edd7;border-color:#d9c397;color:#71502b}.milestone-badge>span{font:32px Georgia,serif}.milestone-badge h3{margin:12px 0 7px}.milestone-badge p{font-size:12px;margin-bottom:12px}.milestone-badge small{font-size:11px}.celebration{display:flex;align-items:center;gap:17px;background:#e4eddb;border:1px solid #bfd0ac;border-radius:13px;padding:18px 22px;margin:0 0 23px}.celebration-symbol{font:38px Georgia,serif;color:#668047}.celebration small{font-size:9px;letter-spacing:1.4px;color:#64794d}.celebration strong{display:block;font:24px Georgia,serif;margin:6px 0}.celebration p{font-size:12px;margin:0;color:#54684e}.celebration .plain{font-size:24px;min-width:44px;margin-left:auto}.french-phrase{text-decoration:underline;text-decoration-color:#99b29a;text-decoration-thickness:1px;text-underline-offset:4px}.milestone-complete{font-size:14px;color:var(--green)}
 @media(max-width:600px){.reward-panel{padding:20px}.reward-panel .row{align-items:start;flex-wrap:wrap}.reward-stats{gap:10px}.reward-stats strong{font-size:27px}.reward-stats small{display:block;margin-top:5px}.reward-panel h2{font-size:25px}.momentum-strip{align-items:start;flex-direction:column;gap:0}.momentum-strip .plain{padding:8px 0}.milestone-grid{grid-template-columns:1fr}.celebration{padding:16px;gap:12px}}
+
+/* Continuous reading: a quiet editorial layout, with optional practice tools. */
+.reading-layout{display:grid;grid-template-columns:190px minmax(0,1fr);gap:44px;align-items:start}
+.reading-outline{position:sticky;top:24px;max-height:80vh;overflow:auto;padding:12px 0}
+.reading-outline a{display:block;padding:12px 8px;border-bottom:1px solid #d9ddd5;color:#38564c;text-decoration:none;font-size:14px;line-height:1.6;overflow-wrap:anywhere}
+.reading-outline a:hover,.reading-outline a:focus-visible{background:#e8eee6}
+.reading-stream{min-width:0;max-width:720px}
+.reading-section{padding:32px 36px;margin-bottom:24px;background:#fffdf8;border:1px solid #dce1d7;border-radius:16px}
+.reading-section h2{font-size:27px;line-height:1.5;overflow-wrap:anywhere;margin-bottom:28px}
+.reading-passage{scroll-margin-top:16vh;margin:0 0 24px}
+.reading-copy{font-size:19px;line-height:1.9;color:#283c34;overflow-wrap:anywhere}
+.reading-copy p{margin:0 0 18px}
+.reading-copy .french-phrase{font-weight:600;color:#245d4c;text-decoration:none;background:#edf2e8;border-radius:3px;padding:1px 2px}
+.reading-tools{font-size:13px;color:#58665e;margin-top:8px}
+.reading-tools summary,.student-reference summary{cursor:pointer;min-height:44px;align-content:center;line-height:1.6}
+.reader-tools-body{padding:12px;background:#f1f3ec;border-radius:8px;display:grid;gap:12px}
+.reader-tools-body textarea{width:100%;min-height:90px}
+.student-reference{border-top:1px solid #dce1d7;padding:14px 0;margin:20px 0;color:#47594e}
+.student-reference p{font-size:17px;line-height:1.8}
+.student-reference small{font-weight:600}
+.section-complete{margin-top:12px}
+.section-complete[aria-pressed=true]{background:#e9f0e5;color:#28533d}
+.reader-toolbar{display:flex;gap:16px;flex-wrap:wrap;margin:20px 0}
+.reader-help{max-width:720px;line-height:1.8;color:#56665b}
+.reader-audio{position:sticky;bottom:12px;display:flex;flex-wrap:wrap;gap:8px;background:#fffdf8;border:1px solid #dce1d7;border-radius:12px;padding:10px;margin-top:24px;box-shadow:0 4px 20px #233c3212}
+.reader-audio .audio-status:empty{display:none}
+.reader-audio .audio-status{flex-basis:100%;margin:0}
+.reading-end{padding:24px 0 48px;line-height:1.8}
+.reading-end button{margin:8px 8px 0 0}
+.mode-switch{margin-bottom:20px}
+@media(max-width:1100px){.reading-layout{grid-template-columns:1fr;gap:16px}.reading-outline{position:static;max-height:160px;display:flex;gap:12px;overflow:auto}.reading-outline .eyebrow{display:none}.reading-outline a{min-width:180px;max-width:220px;flex-shrink:0}.reading-stream{max-width:760px}}
+@media(max-width:600px){.reading-section{padding:24px 20px}.reading-copy{font-size:18px;line-height:1.85}.reading-section h2{font-size:24px}.reader-audio{bottom:6px}.reading-outline{max-height:120px}}

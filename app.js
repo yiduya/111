@@ -4,8 +4,9 @@ const KEY='petit-french-progress-v1';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let course, steps=[], byId=new Map(), state, route='home', current, revealed=false, hidden=false, reviewing=false;
+let readingObserver;
 let sessionCount=0, sessionSeen=new Set(), voices=[], speechToken=0, speechActive=false, speechPaused=false, utterance, toastTimer;
-const defaults=()=>({version:1,completed:[],bookmarks:[],cursor:'1-1',notes:{},settings:{size:5,rate:.9,en:'',fr:'',focus:false}});
+const defaults=()=>({version:1,completed:[],bookmarks:[],cursor:'1-1',notes:{},settings:{size:5,rate:.9,en:'',fr:'',focus:false,mode:'read'}});
 function validate(raw){
  if(!raw||raw.version!==1||!Array.isArray(raw.completed)||!Array.isArray(raw.bookmarks))throw Error('This is not a compatible progress backup.');
  const out=defaults();
@@ -17,6 +18,7 @@ function validate(raw){
  if(typeof s.rate==='number'&&s.rate>=.65&&s.rate<=1.2)out.settings.rate=s.rate;
  for(const lang of ['en','fr'])if(typeof s[lang]==='string')out.settings[lang]=s[lang].slice(0,300);
  out.settings.focus=s.focus===true;
+ out.settings.mode=s.mode==='practice'?'practice':'read';
  return out;
 }
 function save(){
@@ -31,7 +33,7 @@ function bar(done,total){return `<div class="progress" role="progressbar" aria-l
 function trackFor(id){return course.tracks[Number(id.split('-')[0])-1];}
 function resumeStep(track){return track.steps.find(s=>!state.completed.includes(s.id))||track.steps[0];}
 function navigate(next,focus=true){
- stopSpeech();route=next;reviewing=false;
+ readingObserver?.disconnect();stopSpeech();route=next;reviewing=false;
  document.querySelectorAll('[data-route]').forEach(b=>b.classList.toggle('active',b.dataset.route===next));
  $('#breadcrumb').textContent=next==='library'?'THE COMPLETE COURSE':next==='review'?'ROOM TO PRACTISE':'YOUR OWN PACE';
  if(next==='home')renderHome();else if(next==='library')renderLibrary();else renderReview();
@@ -71,8 +73,8 @@ function languageText(audio,fallback){return audio?.length?audio.map(run=>`<span
 function renderHome(){
  const step=byId.get(state.cursor)||steps[0], track=trackFor(step.id), done=progress(track), all=state.completed.length;
  $('#main').innerHTML=`<section class="hero"><div><span class="pill">✦ &nbsp; FRENCH, ONE THOUGHT AT A TIME</span><h1>Make room for<br>a little <em>French.</em></h1><p class="intro">Listen. Think it through. Say it out loud.<br>You don’t need to learn it all today. Just take the next small step.</p></div><div><div class="hero-art" aria-hidden="true"><div class="art-oval"></div><div class="art-line"></div><span class="art-star">✳</span><div class="word-card">bonjour.<small>LET’S BEGIN HERE</small></div><div class="word-card second">petit à petit<small>LITTLE BY LITTLE</small></div><span class="art-dot">↗</span></div><p class="hero-caption">A LITTLE CURIOSITY GOES A LONG WAY</p></div></section>
- <section class="dashboard-grid"><div class="continue-card"><div class="row"><span class="eyebrow" style="margin:0">${all?'PICK UP WHERE YOU LEFT OFF':'YOUR FIRST SMALL STEP'}</span><span class="subtle">${percent(all,steps.length)}% of course</span></div><h2>Track ${track.id.toString().padStart(2,'0')}</h2><p>The original conversation, a little at a time.<br>${done} of ${track.steps.length} steps explored in this track.</p>${bar(done,track.steps.length)}<div class="row subtle"><span>Introduction to French</span><span>40 tracks · Your pace</span></div><button class="primary wide" data-action="begin">${all?'Continue learning':'Begin a small session'} <span aria-hidden="true">→</span></button></div>
- <div class="rhythm-card"><span class="eyebrow">MAKE IT MANAGEABLE</span><h3>Find your rhythm.</h3><p>Choose a small group of steps.<br>A gentle pause is built in at the end.</p><div class="segmented" aria-label="Session size">${[5,10,20].map(n=>`<button data-size="${n}" class="${state.settings.size===n?'selected':''}" aria-pressed="${state.settings.size===n}">${n} steps</button>`).join('')}</div><p class="footnote">No timer. You can pause whenever you need.</p></div></section>
+ <section class="dashboard-grid"><div class="continue-card"><div class="row"><span class="eyebrow" style="margin:0">${all?'PICK UP WHERE YOU LEFT OFF':'YOUR FIRST SMALL STEP'}</span><span class="subtle">${percent(all,steps.length)}% of course</span></div><h2>Track ${track.id.toString().padStart(2,'0')}</h2><p>A continuous reading space, with optional speaking practice.<br>${done} of ${track.steps.length} steps explored in this track.</p>${bar(done,track.steps.length)}<div class="row subtle"><span>Introduction to French</span><span>40 tracks · Your pace</span></div><button class="primary wide" data-action="begin">${all?'Continue learning':'Begin a small session'} <span aria-hidden="true">→</span></button></div>
+ <div class="rhythm-card"><span class="eyebrow">MAKE IT MANAGEABLE</span><h3>Find your rhythm.</h3><p>For speaking practice, choose a small group of steps.<br>Continuous reading has no forced pauses.</p><div class="segmented" aria-label="Session size">${[5,10,20].map(n=>`<button data-size="${n}" class="${state.settings.size===n?'selected':''}" aria-pressed="${state.settings.size===n}">${n} steps</button>`).join('')}</div><p class="footnote">No timer. You can pause whenever you need.</p></div></section>
  ${rewardPanel()}<section><div class="section-title"><h2>Your path through French</h2><button class="plain" data-route="library">Explore all 40 tracks &nbsp; ↗</button></div><div class="path-grid">${course.tracks.slice(Math.min(Math.max(track.id-1,0),36),Math.min(Math.max(track.id-1,0),36)+4).map(t=>`<button class="path-card ${t.id===track.id?'current':''}" data-track="${t.id}"><span class="track-number">${String(t.id).padStart(2,'0')}</span><h3>Track ${t.id}</h3><p>${progress(t)===t.steps.length?'Explored ✓':progress(t)?`${progress(t)} / ${t.steps.length} steps`:`${t.steps.length} small steps`}</p></button>`).join('')}</div></section>`;
 }
 function renderLibrary(){
@@ -97,16 +99,65 @@ function begin(id=state.cursor,review=false,reset=true){
  openStep(id);
 }
 function openStep(id){
- stopSpeech();current=byId.get(id);revealed=false;hidden=false;route='lesson';
+ readingObserver?.disconnect();stopSpeech();current=byId.get(id);revealed=false;hidden=false;route='lesson';
  if(!reviewing){state.cursor=id;save();}
  document.querySelectorAll('[data-route]').forEach(b=>b.classList.toggle('active',b.dataset.route===(reviewing?'review':'home')));
  $('#breadcrumb').textContent=`${reviewing?'PRACTICE':'YOUR CONVERSATION'} / TRACK ${trackFor(id).id}`;
- renderLesson();window.scrollTo(0,0);$('#main').focus({preventScroll:true});
+ renderLesson();window.scrollTo(0,0);if(!reviewing&&state.settings.mode==='read'&&current.index>0)document.getElementById('reading-'+id)?.scrollIntoView({block:'start'});$('#main').focus({preventScroll:true});
+}
+// Preserve source text and language spans while adding readable paragraph boundaries.
+function readingParagraphs(step){
+ const runs=step.audio?.length?step.audio:[{lang:'en',text:step.text}];
+ const text=runs.map(r=>r.text).join('');
+ const sentences=text.match(/[^.!?,;]*[.!?,;]+[”’"']*\s*|[^.!?,;]+$/g)||[text];
+ let chunks=[],chunk='';
+ for(const sentence of sentences){if(chunk.length>=260){chunks.push(chunk);chunk='';}chunk+=sentence;}
+ if(chunk)chunks.push(chunk);
+ let offset=0;
+ return chunks.map(part=>{
+  const start=offset,end=offset+part.length;offset=end;let at=0;
+  const pieces=runs.flatMap(run=>{const a=at;at+=run.text.length;const value=run.text.slice(Math.max(0,start-a),Math.max(0,Math.min(run.text.length,end-a)));return value?[{lang:run.lang,text:value}]:[];});
+  return `<p>${languageText(pieces,part)}</p>`;
+ }).join('');
+}
+function readingGroups(track){
+ const groups=[];
+ for(let i=0;i<track.steps.length;i+=6)groups.push(track.steps.slice(i,i+6));
+ return groups;
+}
+function readerTitle(group,index){
+ const phrases=group.flatMap(s=>(s.audio||[]).filter(r=>r.lang==='fr').flatMap(r=>r.text.split(/[.,;!?]+/)).map(t=>t.trim()).filter(t=>t.length>2&&t.length<50));
+ const seen=new Set(),unique=phrases.filter(t=>{const key=t.toLocaleLowerCase();if(seen.has(key))return false;seen.add(key);return true;});
+ return unique.length?unique.slice(0,2).join(' · '):`Reading ${index+1}`;
+}
+function renderReader(){
+ const track=trackFor(current.id),groups=readingGroups(track);
+ $('#main').innerHTML=`<section class="lesson-heading"><div class="row"><p class="eyebrow">READ AT YOUR OWN PACE</p><button class="plain" data-route="home">Save & leave ↗</button></div><h1>Track ${String(track.id).padStart(2,'0')} <span class="subtle">/ Reading</span></h1><p class="intro">Follow the ideas. Keep scrolling when you’re ready.</p><div class="reader-toolbar"><button class="secondary" data-action="practice-mode">Switch to speaking practice</button><button class="plain" data-action="transcript">Original transcript ↗</button></div><p class="reader-help">Explanations appear once. Student attempts are optional references, not answer keys. Mark a section explored when you choose; scrolling only saves your place.</p><p id="reader-progress" role="status">${progress(track)} / ${track.steps.length} steps explored</p></section>
+ <div class="reading-layout"><nav class="reading-outline" aria-label="Reading sections"><p class="eyebrow">IN THIS TRACK</p>${groups.map((g,i)=>`<a href="#reading-${g[0].id}">${String(i+1).padStart(2,'0')} · ${esc(readerTitle(g,i))}</a>`).join('')}</nav><div class="reading-stream">${groups.map((group,i)=>`<section class="reading-section" aria-labelledby="section-${i}"><header><p class="eyebrow">${String(i+1).padStart(2,'0')} / ${String(groups.length).padStart(2,'0')} · STEPS ${group[0].index+1}–${group.at(-1).index+1}</p><h2 id="section-${i}">${esc(readerTitle(group,i))}</h2></header>${group.map(step=>`<article class="reading-passage" id="reading-${step.id}" data-reading-id="${step.id}"><div class="reading-copy">${readingParagraphs(step)}</div><details class="reading-tools"><summary>Listen, save or make a note · ${step.index+1}</summary><div class="reader-tools-body"><button class="audio-button" data-read-audio="${step.id}">▷ Listen · English + French</button><button class="plain" data-read-bookmark="${step.id}" aria-pressed="${state.bookmarks.includes(step.id)}">${state.bookmarks.includes(step.id)?'✓ Saved for practice':'+ Keep in practice'}</button><label for="note-${step.id}">Your notes</label><textarea id="note-${step.id}" data-read-note="${step.id}" maxlength="4000">${esc(state.notes[step.id]||'')}</textarea></div></details></article>`).join('')}
+ ${group.some(s=>s.responses.length)?`<details class="student-reference"><summary>Student attempts · optional reference</summary><p class="subtle">These may contain mistakes. Corrections remain in the main reading, in source order.</p>${group.filter(s=>s.responses.length).map(s=>`<div><small>After step ${s.index+1}</small>${s.responses.map(r=>`<p>${languageText(r.audio,r.text)}</p>`).join('')}</div>`).join('')}</details>`:''}
+ <button class="secondary section-complete" data-read-complete="${i}" aria-pressed="${group.every(s=>state.completed.includes(s.id))}">${group.every(s=>state.completed.includes(s.id))?'✓ Section explored':'Mark this section explored'}</button></section>`).join('')}
+ <footer class="reading-end"><h2>A good place to pause.</h2><p>Your reading place is saved. Continue whenever you feel ready.</p>${course.tracks[track.id]?`<button class="primary" data-track="${track.id+1}">Next track →</button>`:''}<button class="secondary" data-route="home">Save & leave</button></footer></div></div>
+ <div class="reader-audio"><button class="audio-button" data-action="pause-speech">Ⅱ Pause</button><button class="audio-button" data-action="stop-speech">□ Stop</button><button class="audio-button" data-action="speak-selection">▷ Selected French</button><span class="audio-status" role="status"></span></div>`;
+ document.querySelectorAll('[data-read-note]').forEach(input=>input.addEventListener('input',()=>{state.notes[input.dataset.readNote]=input.value;save();}));
+ readingObserver=new IntersectionObserver(entries=>{
+  if(route!=='lesson'||state.settings.mode!=='read')return;
+  const visible=entries.filter(e=>e.isIntersecting).sort((a,b)=>a.boundingClientRect.top-b.boundingClientRect.top);
+  if(visible.length){current=byId.get(visible[0].target.dataset.readingId);state.cursor=current.id;save();}
+ },{rootMargin:'-15% 0px -55% 0px',threshold:0});
+ document.querySelectorAll('[data-reading-id]').forEach(el=>readingObserver.observe(el));
+ updateAudioButtons();
+}
+function completeReadingSection(button){
+ const track=trackFor(current.id),group=readingGroups(track)[Number(button.dataset.readComplete)];
+ for(const step of group)if(!state.completed.includes(step.id))state.completed.push(step.id);
+ save();button.textContent='✓ Section explored';button.setAttribute('aria-pressed','true');
+ $('#reader-progress').textContent=`${progress(track)} / ${track.steps.length} steps explored`;
 }
 function renderLesson(){
+ if(!reviewing&&state.settings.mode==='read'){renderReader();return;}
  const t=trackFor(current.id),s=current,bookmarked=state.bookmarks.includes(s.id),hasResponse=s.responses.length>0;
  $('#main').innerHTML=`<section class="lesson-heading"><div class="row"><p class="eyebrow" style="margin:0">${reviewing?'BACK FOR ANOTHER LOOK':'INTRODUCTION TO FRENCH'}</p><button class="plain" data-route="${reviewing?'review':'home'}">Save & leave ↗</button></div><h1>Track ${String(t.id).padStart(2,'0')} <span class="subtle">/ ${reviewing?'Practice':`Step ${s.index+1} of ${t.steps.length}`}</span></h1>${bar(progress(t),t.steps.length)}<div class="row subtle"><span>${progress(t)} steps explored in this track</span><span>${sessionCount} / ${state.settings.size} in this session</span></div></section>
- ${rewardPanel(true)}<div class="lesson-layout"><article class="lesson-card"><div class="lesson-card-header"><span class="eyebrow">${hasResponse?'LISTEN → THINK → SPEAK':'LISTEN & NOTICE'}</span><button class="bookmark" data-action="bookmark" aria-pressed="${bookmarked}">${bookmarked?'✓ Saved for practice':'+ Keep in practice'}</button></div><div class="lesson-content"><div class="row"><span class="speaker-label">THE TEACHER · ORIGINAL TRANSCRIPT${s.parts>1?` · passage ${s.part}/${s.parts}`:''}</span><button class="plain" data-action="hide-text">Hide text</button></div>
+ ${reviewing?'':'<button class="secondary mode-switch" data-action="reading-mode">Continuous reading ↗</button>'}${rewardPanel(true)}<div class="lesson-layout"><article class="lesson-card"><div class="lesson-card-header"><span class="eyebrow">${hasResponse?'LISTEN → THINK → SPEAK':'LISTEN & NOTICE'}</span><button class="bookmark" data-action="bookmark" aria-pressed="${bookmarked}">${bookmarked?'✓ Saved for practice':'+ Keep in practice'}</button></div><div class="lesson-content"><div class="row"><span class="speaker-label">THE TEACHER · ORIGINAL TRANSCRIPT${s.parts>1?` · passage ${s.part}/${s.parts}`:''}</span><button class="plain" data-action="hide-text">Hide text</button></div>
  <div class="audio-bar"><button class="audio-button" data-speak="teacher" data-lang="en">▷ Read passage · English + French</button><button class="audio-button" data-action="pause-speech" aria-label="Pause or resume speech">Ⅱ Pause</button><button class="audio-button" data-action="stop-speech">□ Stop</button></div><p class="audio-status" role="status">English + French voices · Language switches follow the original PDF. French phrases are underlined.</p>
  <p class="teacher-text" id="teacher-text">${languageText(s.audio,s.text)}</p><div class="step-hidden" id="hidden-text" hidden>Take your time.<br>Keep the thought in your mind.</div><button class="audio-button" data-action="speak-selection">▷ Read selected text in French</button>
  ${hasResponse?`<section class="think-panel"><h3>Your turn. Pause before you peek.</h3><p>Think it through, then say your response out loud. Some turns ask a question; others invite you to repeat a sound.</p><label for="note">Optional scratchpad · Your words, not a graded test</label><textarea id="note" maxlength="4000" placeholder="You can think out loud instead…">${esc(state.notes[s.id]||'')}</textarea></section><button class="secondary wide" data-action="reveal" aria-expanded="false" aria-controls="answer">I’ve tried — show the conversation ↓</button><section class="answer-box" id="answer" hidden><h3>What the student said</h3><p class="answer-note">Original student response — it may contain mistakes. Follow the teacher’s feedback below; this is not an answer key.</p><div class="original-response">${s.responses.map(r=>`<p>${esc(r.text)}</p>`).join('')}</div><button class="audio-button" data-speak="response" data-lang="fr">▷ Read student response · French voice</button>${s.followup?`<h3 style="margin-top:23px">The teacher’s follow-up</h3><p class="followup">${languageText(s.followupAudio,s.followup)}</p><button class="audio-button" data-speak="followup" data-lang="en">▷ Read teacher’s follow-up · English + French</button>`:'<p class="subtle">The conversation continues in the next track.</p>'}</section>`:''}
@@ -144,7 +195,7 @@ function showTranscript(){
  const t=trackFor(current.id);
  modal(`<p class="eyebrow">ORIGINAL COURSE · REFERENCE VIEW</p><h2 id="modal-title">Track ${t.id} transcript</h2><p>Includes the original student’s attempts, mistakes, and teacher corrections. Use this for reference after thinking through your own response.</p><p><a href="${encodeURI(course.source)}#page=${current.page}" target="_blank" rel="noopener">Open original PDF at page ${current.page} ↗</a></p>${t.turns.map(turn=>`<div class="transcript-turn"><strong>${turn.speaker==='teacher'?'Teacher':'Student'} · p. ${turn.page}</strong>${esc(turn.text)}</div>`).join('')}`);
 }
-function showAbout(){modal(`<p class="eyebrow">THE ORIGINAL CONVERSATION</p><h2 id="modal-title">Think your way into French.</h2><p>This independent study companion contains all 40 tracks of <strong>Language Transfer’s Introduction to French</strong>, from your supplied 157-page transcript. Course text stays in its original English and French. Only whitespace and step boundaries have been adjusted; transcription errors and the student’s mistakes are retained.</p><p>Short passages are followed by the original student response and the teacher’s follow-up. Think and speak before revealing the response. Progress means “explored”, not “mastered”.</p><p><strong>Audio:</strong> this app uses your device’s speech synthesis, not the original recordings. Teacher passages and follow-ups switch between English and French using language markings recovered from the PDF. Missing or inconsistent source formatting can be overridden by selecting a phrase and using the French voice button. A missing French voice is reported instead of using an English voice. Synthesized pronunciation and phonetic notation may be imperfect. For the original course recordings, visit <a href="https://www.languagetransfer.org/french" target="_blank" rel="noopener">Language Transfer ↗</a>.</p><p><strong>On iPad:</strong> open the hosted app in Safari. For a home-screen app, choose Share → Add to Home Screen. Offline caching requires HTTPS (or localhost for development), a successful initial load, and available browser storage. Device voices may need to be downloaded in iPad settings.</p><p><strong>Your data:</strong> no account, microphone, analytics, or uploaded answers. Progress stays in this browser. Clearing website data, private browsing, a new device, or changing the site address can remove or separate it. Use Audio & preferences to export a backup. iPad may evict website storage.</p><p><a href="${encodeURI(course.source)}" target="_blank" rel="noopener">Read the original PDF ↗</a> · <button class="plain" data-action="settings">Audio & preferences</button></p><details><summary>Original introduction, editor notes & contents</summary><div class="front-matter">${esc(course.frontMatter)}</div></details><p class="subtle">Independent companion; not affiliated with or endorsed by Language Transfer. The course and transcript remain credited to their original creators.</p>`);}
+function showAbout(){modal(`<p class="eyebrow">THE ORIGINAL CONVERSATION</p><h2 id="modal-title">Think your way into French.</h2><p>This independent study companion contains all 40 tracks of <strong>Language Transfer’s Introduction to French</strong>, from your supplied 157-page transcript. Course text stays in its original English and French. Only whitespace and step boundaries have been adjusted; transcription errors and the student’s mistakes are retained.</p><p>Continuous reading presents each explanation once, with optional student references. Switch to speaking practice to think and speak before revealing a response. Progress means “explored”, not “mastered”.</p><p><strong>Audio:</strong> this app uses your device’s speech synthesis, not the original recordings. Teacher passages and follow-ups switch between English and French using language markings recovered from the PDF. Missing or inconsistent source formatting can be overridden by selecting a phrase and using the French voice button. A missing French voice is reported instead of using an English voice. Synthesized pronunciation and phonetic notation may be imperfect. For the original course recordings, visit <a href="https://www.languagetransfer.org/french" target="_blank" rel="noopener">Language Transfer ↗</a>.</p><p><strong>On iPad:</strong> open the hosted app in Safari. For a home-screen app, choose Share → Add to Home Screen. Offline caching requires HTTPS (or localhost for development), a successful initial load, and available browser storage. Device voices may need to be downloaded in iPad settings.</p><p><strong>Your data:</strong> no account, microphone, analytics, or uploaded answers. Progress stays in this browser. Clearing website data, private browsing, a new device, or changing the site address can remove or separate it. Use Audio & preferences to export a backup. iPad may evict website storage.</p><p><a href="${encodeURI(course.source)}" target="_blank" rel="noopener">Read the original PDF ↗</a> · <button class="plain" data-action="settings">Audio & preferences</button></p><details><summary>Original introduction, editor notes & contents</summary><div class="front-matter">${esc(course.frontMatter)}</div></details><p class="subtle">Independent companion; not affiliated with or endorsed by Language Transfer. The course and transcript remain credited to their original creators.</p>`);}
 function loadVoices(){voices='speechSynthesis'in window?speechSynthesis.getVoices():[];if($('#voice-en'))fillVoiceSelects();}
 function fillVoiceSelects(){
  for(const lang of ['en','fr']){
@@ -226,6 +277,7 @@ function applyFocus(){document.body.classList.toggle('focus',state.settings.focu
 function reveal(){if(!current||!current.responses.length)return;revealed=true;$('#answer').hidden=false;const button=$('[data-action="reveal"]');button.textContent='Conversation revealed';button.setAttribute('aria-expanded','true');$('[data-action="next"]').disabled=false;$('#answer').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'});}
 async function handleAction(action){
  if(action==='begin')begin();
+ else if(action==='reading-mode'||action==='practice-mode'){state.settings.mode=action==='reading-mode'?'read':'practice';save();openStep(current.id);}
  else if(action==='achievements')showAchievements();
  else if(action==='dismiss-reward')$('.celebration')?.remove();
  else if(action==='settings')showSettings();
@@ -255,6 +307,9 @@ document.addEventListener('click',e=>{
  else if(b.dataset.track)begin(resumeStep(course.tracks[Number(b.dataset.track)-1]).id);
  else if(b.dataset.step)begin(b.dataset.step);
  else if(b.dataset.review)begin(b.dataset.review,true);
+ else if(b.dataset.readComplete!==undefined)completeReadingSection(b);
+ else if(b.dataset.readAudio)speakSegments(byId.get(b.dataset.readAudio).audio);
+ else if(b.dataset.readBookmark){const id=b.dataset.readBookmark,i=state.bookmarks.indexOf(id);if(i<0)state.bookmarks.push(id);else state.bookmarks.splice(i,1);save();b.setAttribute('aria-pressed',i<0);b.textContent=i<0?'✓ Saved for practice':'+ Keep in practice';}
  else if(b.dataset.speak){const segments=b.dataset.speak==='teacher'?current.audio:b.dataset.speak==='response'?current.responses.flatMap(r=>r.audio):current.followupAudio;speakSegments(segments);}
  else if(b.dataset.action)handleAction(b.dataset.action);
 });

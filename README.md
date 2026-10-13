@@ -21,15 +21,23 @@ For a quick test on a computer, open `dist/petit-a-petit.html` in a browser. It 
 
 ## Learning flow
 
-- Choose a group of 5, 10 or 20 steps. No forced timer or streak penalty.
-- Read or listen to one short original passage. Hide its text while you think.
-- When the original conversation includes a student turn, respond out loud or use the optional scratchpad, then reveal it.
-- **Student responses are verbatim attempts, not answer keys.** Mistakes and transcription errors remain in the source. The next teacher turn is shown immediately as follow-up. It may itself ask another question; it also remains in the normal course sequence, so no source material is omitted.
-- Continue when ready. Save difficult steps in **My practice**, revisit them, and remove them when you choose. Practice does not move your main course position.
-- A pause screen appears at the end of each group. Stop or continue without losing your place.
-- The library searches every original dialogue passage. Each learning step links to its full track transcript and the original PDF page where the containing teacher passage starts.
+- **Continuous reading is the default.** Read a complete track by scrolling, without reveal gates, next-step buttons or forced breaks.
+- Explanations appear once in source order, grouped into sections of six source steps. Long passages are divided into paragraphs; French expressions are highlighted and used as section signposts. These are reading aids, not rewritten lesson summaries.
+- Student attempts are in optional section references, clearly identified as potentially incorrect. Teacher corrections remain in the main reading. The original transcript and PDF remain available.
+- Scrolling saves the current reading passage but does not award completion or points. Use **Mark this section explored** to record a section once; revisiting cannot earn duplicate points.
+- Expand a passage’s optional tools to listen, save it in **My practice**, or write a note. Existing notes, bookmarks, progress and backups remain compatible.
+- Switch to **speaking practice** for the original think/reveal flow and 5-, 10- or 20-step sessions. The chosen mode is saved. Saved practice leaves the main course position unchanged.
 
-“Explored” records steps you explicitly continued through. It does not grade correctness or certify mastery. Navigation does not silently complete skipped content. All tracks are available from the start.
+“Explored” records sections or practice steps you explicitly completed. It does not grade correctness or certify mastery. All tracks are available from the start.
+
+Reader regression checks (Python Playwright and Chromium required):
+
+```sh
+node --check app.js
+python tests/test_reading.py
+```
+
+These checks cover all 40 tracks for source-text preservation, plus saved position, explicit section completion, bookmarks, notes, mode switching and mobile/tablet/desktop overflow. They use local request routing and need no running web server.
 
 ## Voice
 
